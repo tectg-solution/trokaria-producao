@@ -1,0 +1,42 @@
+{
+  "id": "./",
+  "name": "Trokar.ia — Troque. Conecte.",
+  "short_name": "Trokar.ia",
+  "lang": "pt-BR",
+  "description": "Troque produtos gratuitamente e encontre novas oportunidades na sua região.",
+  "start_url": "./index.php?r=home&source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080d0b",
+  "theme_color": "#080d0b",
+  "icons": [
+    {
+      "src": "assets/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/pwa/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Conversas",
+      "url": "./index.php?r=inbox"
+    },
+    {
+      "name": "Anunciar item",
+      "url": "./index.php?r=publish"
+    }
+  ]
+}

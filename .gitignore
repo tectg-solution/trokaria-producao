@@ -1,0 +1,24 @@
+# Configuração e arquivos gerados pelo servidor
+.env
+.env.*
+!.env.example
+database.php
+db.php
+/app/config.php
+/private_data/
+/uploads/**
+/logos-parceiros/**
+/storage/**
+/app/storage/**
+!/uploads/**/
+!/storage/**/
+!.htaccess
+!/uploads/**/index.html
+!/storage/**/index.html
+*.pem
+*.key
+*.sqlite*
+*.log
+*.bak
+*.zip
+node_modules/

@@ -1,0 +1,43 @@
+<?php
+declare(strict_types=1);
+$config=require (is_file(__DIR__.'/config.php')?__DIR__.'/config.php':__DIR__.'/config.example.php');
+ini_set('display_errors','0');ini_set('log_errors','1');
+if(PHP_SAPI!=='cli'){
+ if(str_starts_with($config['base_url'],'https://')&&!in_array(strtolower((string)($_SERVER['HTTPS']??'')),['on','1'],true)){header('Location: '.$config['base_url'].($_SERVER['REQUEST_URI']??'/'),true,302);exit;}
+ header('X-Content-Type-Options: nosniff');header('Referrer-Policy: strict-origin-when-cross-origin');header('X-Frame-Options: SAMEORIGIN');header('Cache-Control: no-store');
+ ini_set('session.use_strict_mode','1');ini_set('session.use_only_cookies','1');session_name('trokar_session');session_set_cookie_params(['lifetime'=>0,'path'=>'/','secure'=>str_starts_with($config['base_url'],'https://'),'httponly'=>true,'samesite'=>'Lax']);session_start();
+}
+require_once __DIR__.'/schema.php';
+function cfg():array{return $GLOBALS['config'];}
+function db():PDO{static $db=null;if($db)return $db;$c=cfg()['db'];if($c['driver']==='sqlite'){$db=new PDO('sqlite:'.$c['path']);$db->exec('PRAGMA foreign_keys=ON');$db->exec('PRAGMA busy_timeout=5000');}else{$db=new PDO('mysql:host='.$c['host'].';port='.(int)$c['port'].';dbname='.$c['name'].';charset=utf8mb4',$c['user'],$c['password']);}$db->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);if($c['driver']!=='sqlite')$db->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);return $db;}
+function sql(string $query,array $params=[]):PDOStatement{$s=db()->prepare($query);$s->execute($params);return $s;}
+function now():string{return gmdate('Y-m-d H:i:s');}
+function e(mixed $s):string{return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
+function url(string $r='home',array $params=[]):string{if(in_array($r,['admin','admin-login'],true)&&!isset($params['editor_preview']))return 'admin'.($params?'?'.http_build_query($params):'');return 'index.php?'.http_build_query(['r'=>$r]+$params);}
+function go(string $r='home',array $p=[]):never{header('Location: '.url($r,$p),true,303);exit;}
+function flash(string $s):void{$_SESSION['flash']=$s;}
+function csrf():string{return $_SESSION['csrf']??=bin2hex(random_bytes(32));}
+function csrfField():string{return '<input type="hidden" name="csrf" value="'.e(csrf()).'">';}
+function checkCsrf():void{if(!hash_equals(csrf(),(string)($_POST['csrf']??'')))throw new RuntimeException('Sua sessão expirou. Recarregue a página e tente novamente.');}
+function currentUser():?array{static $loaded=false,$user=null;if($loaded)return $user;$loaded=true;if(!isset($_SESSION['uid']))return null;$u=sql('SELECT id,name,email,city,state,role,status,auth_version,email_verified FROM users WHERE id=?',[(int)$_SESSION['uid']])->fetch();if(!$u||$u['status']!=='ACTIVE'||(int)$u['auth_version']!==(int)($_SESSION['auth_version']??0)){unset($_SESSION['uid'],$_SESSION['auth_version']);return null;}return $user=$u;}
+function requireUser():array{$u=currentUser();if(!$u){flash('Entre na sua conta para continuar. Você não precisa anunciar um item para fazer uma proposta.');go('login');}return $u;}
+function requireAdmin():array{$u=currentUser();if(!$u)go('admin-login');if($u['role']!=='ADMIN'){http_response_code(403);throw new RuntimeException('Esta área é exclusiva da administração.');}return $u;}
+function loginUser(array $u):void{session_regenerate_id(true);$_SESSION['uid']=(int)$u['id'];$_SESSION['auth_version']=(int)$u['auth_version'];$_SESSION['csrf']=bin2hex(random_bytes(32));}
+function textField(string $key,int $min,int $max):string{$v=trim((string)($_POST[$key]??''));$len=mb_strlen($v,'UTF-8');if($len<$min||$len>$max)throw new RuntimeException('Confira o campo '.str_replace('_',' ',$key).': use entre '.$min.' e '.$max.' caracteres.');return $v;}
+function validEmail(string $email):string{$email=strtolower(trim($email));if(strlen($email)>190||!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Informe um e-mail válido.');return $email;}
+function passwordInput(string $key='password'):string{$p=(string)($_POST[$key]??'');if(strlen($p)<12||strlen($p)>72)throw new RuntimeException('Use uma senha entre 12 e 72 caracteres.');return $p;}
+function stateInput(string $key='state'):string{$s=strtoupper(trim((string)($_POST[$key]??'')));if(!in_array($s,states(),true))throw new RuntimeException('Escolha um estado válido.');return $s;}
+function states():array{return explode(' ','AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO');}
+function categories():array{return ['electronics'=>['Eletrônicos','phone'],'furniture'=>['Móveis','sofa'],'fashion'=>['Roupas e acessórios','shirt'],'books'=>['Livros e estudos','book'],'sports'=>['Esportes e lazer','ball'],'pet'=>['Itens para pets','pet'],'home'=>['Casa e decoração','house'],'tools'=>['Ferramentas','tool'],'other'=>['Outros','dots']];}
+function norm(string $s):string{$s=mb_strtolower($s,'UTF-8');$s=strtr($s,['á'=>'a','à'=>'a','â'=>'a','ã'=>'a','ä'=>'a','é'=>'e','è'=>'e','ê'=>'e','ë'=>'e','í'=>'i','ì'=>'i','î'=>'i','ï'=>'i','ó'=>'o','ò'=>'o','ô'=>'o','õ'=>'o','ö'=>'o','ú'=>'u','ù'=>'u','û'=>'u','ü'=>'u','ç'=>'c','ñ'=>'n']);$converted=iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$s);return trim(preg_replace('/[^a-z0-9 ]/',' ',strtolower($converted!==false?$converted:$s))??'');}
+function rate(string $action,int $max,int $seconds,?string $actor=null):void{$actor??=isset($_SESSION['uid'])?'user:'.$_SESSION['uid']:'ip:'.($_SERVER['REMOTE_ADDR']??'cli');$hash=hash_hmac('sha256',$actor,cfg()['app_key']);$since=gmdate('Y-m-d H:i:s',time()-$seconds);db()->beginTransaction();try{$lock=hash('sha256',$hash.'|'.$action);$insert=db()->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?'INSERT IGNORE':'INSERT OR IGNORE';sql($insert.' INTO rate_locks(lock_key,created_at) VALUES(?,?)',[$lock,now()]);lockRow('SELECT lock_key FROM rate_locks WHERE lock_key=?',[$lock])->fetch();$count=(int)sql('SELECT COUNT(*) FROM limits_log WHERE actor_hash=? AND action=? AND created_at>=?',[$hash,$action,$since])->fetchColumn();if($count>=$max)throw new RuntimeException('Muitas tentativas. Aguarde alguns minutos e tente novamente.');sql('INSERT INTO limits_log(actor_hash,action,created_at) VALUES(?,?,?)',[$hash,$action,now()]);db()->commit();}catch(Throwable $ex){if(db()->inTransaction())db()->rollBack();throw $ex;}}
+function audit(string $action,int $target,string $details=''):void{$u=requireAdmin();sql('INSERT INTO audit(admin_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)',[$u['id'],$action,$target,$details,now()]);}
+function listing(int $id,bool $private=false):array{$l=sql('SELECT l.*,u.name AS owner_name,u.status AS owner_status FROM listings l JOIN users u ON u.id=l.user_id WHERE l.id=?',[$id])->fetch();$u=currentUser();$allowed=$l&&$private&&$u&&((int)$l['user_id']===(int)$u['id']||$u['role']==='ADMIN');if(!$l||(!$allowed&&($l['status']!=='ACTIVE'||$l['owner_status']!=='ACTIVE'))){http_response_code(404);throw new RuntimeException('Anúncio não disponível.');}return $l;}
+function ownListing(int $id):array{$u=requireUser();$l=listing($id,true);if((int)$l['user_id']!==(int)$u['id']){http_response_code(403);throw new RuntimeException('Você não pode alterar este anúncio.');}return $l;}
+function thread(int $id):array{$u=requireUser();$p=sql('SELECT p.*,l.title AS listing_title,l.status AS listing_status,u.name AS sender_name,v.name AS recipient_name,u.status AS sender_status,v.status AS recipient_status FROM proposals p JOIN listings l ON l.id=p.listing_id JOIN users u ON u.id=p.sender_id JOIN users v ON v.id=p.recipient_id WHERE p.id=?',[$id])->fetch();if(!$p||!in_array((int)$u['id'],[(int)$p['sender_id'],(int)$p['recipient_id']],true)||($p['status']==='PENDING'&&(int)$p['recipient_id']===(int)$u['id'])){http_response_code(403);throw new RuntimeException('Você não tem acesso a esta conversa.');}return $p;}
+function mediaUrl(int $id):string{return 'media.php?id='.$id;}
+function cover(int $id):?int{$x=sql('SELECT id FROM photos WHERE listing_id=? ORDER BY position_num,id LIMIT 1',[$id])->fetchColumn();return $x?(int)$x:null;}
+function icon(string $name):string{return '<svg aria-hidden="true"><use href="#i-'.e($name).'"/></svg>';}
+function tx(callable $fn):mixed{db()->beginTransaction();try{$out=$fn();db()->commit();return $out;}catch(Throwable $e){if(db()->inTransaction())db()->rollBack();throw $e;}}
+function lockRow(string $query,array $params):PDOStatement{return sql($query.(db()->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''),$params);}
+require_once __DIR__.'/ai.php';require_once __DIR__.'/mail.php';

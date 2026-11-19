@@ -1,0 +1,13 @@
+<?php
+declare(strict_types=1);
+function sendMail(string $to,string $subject,string $body):bool{
+ $c=cfg()['mail'];$from=filter_var($c['from'],FILTER_VALIDATE_EMAIL);if(!$from||!filter_var($to,FILTER_VALIDATE_EMAIL)||preg_match('/[\r\n]/',$to.$subject.$from))return false;
+ if($c['transport']==='disabled')return false;
+ if($c['transport']==='mail')return mail($to,$subject,$body,'From: Trokar.ia <'.$from.">\r\nContent-Type: text/plain; charset=UTF-8\r\n");
+ if($c['transport']!=='smtp')return false;$fp=null;
+ try{$security=$c['smtp_security'];if(!in_array($security,['tls','ssl'],true))throw new RuntimeException('SMTP precisa de TLS.');$context=stream_context_create(['ssl'=>['verify_peer'=>true,'verify_peer_name'=>true]]);$fp=stream_socket_client(($security==='ssl'?'ssl://':'tcp://').$c['smtp_host'].':'.(int)$c['smtp_port'],$errno,$error,15,STREAM_CLIENT_CONNECT,$context);if(!$fp)throw new RuntimeException('SMTP indisponível');stream_set_timeout($fp,15);
+  $read=function(array $codes)use($fp){$last='';while(($line=fgets($fp,2048))!==false){$last=$line;if(strlen($line)<4||$line[3]!=='-')break;}if(!in_array((int)substr($last,0,3),$codes,true))throw new RuntimeException('Resposta SMTP inválida');};$cmd=function(string $line,array $codes)use($fp,$read){fwrite($fp,$line."\r\n");$read($codes);};$read([220]);$cmd('EHLO trokar.ia.br',[250]);if($security==='tls'){$cmd('STARTTLS',[220]);if(!stream_socket_enable_crypto($fp,true,STREAM_CRYPTO_METHOD_TLS_CLIENT))throw new RuntimeException('TLS falhou');$cmd('EHLO trokar.ia.br',[250]);}
+  $cmd('AUTH LOGIN',[334]);$cmd(base64_encode($c['smtp_user']),[334]);$cmd(base64_encode($c['smtp_password']),[235]);$cmd('MAIL FROM:<'.$from.'>',[250]);$cmd('RCPT TO:<'.$to.'>',[250,251]);$cmd('DATA',[354]);$safeBody=preg_replace('/^\./m','..',str_replace(["\r\n","\r"],"\n",$body));$message='From: Trokar.ia <'.$from.">\r\nTo: <".$to.">\r\nSubject: =?UTF-8?B?".base64_encode($subject)."?=\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n".str_replace("\n","\r\n",$safeBody)."\r\n.\r\n";fwrite($fp,$message);$read([250]);$cmd('QUIT',[221]);fclose($fp);return true;
+ }catch(Throwable $e){if(is_resource($fp))fclose($fp);error_log('Trokar: falha no envio de e-mail.');return false;}
+}
+function createRecovery(int $userId):string{$token=bin2hex(random_bytes(32));sql('UPDATE recovery_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL',[now(),$userId]);sql('INSERT INTO recovery_tokens(user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?)',[$userId,hash('sha256',$token),gmdate('Y-m-d H:i:s',time()+1800),now()]);return cfg()['base_url'].'/'.url('reset',['token'=>$token]);}

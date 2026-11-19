@@ -1,0 +1,12 @@
+DirectoryIndex index.php
+# PRELAUNCH_20261103_V1
+Options -Indexes
+<FilesMatch "^(LEIA-ME|INSTALL|QA|NOTAS).*\.(txt|md|json)$">
+Require all denied
+</FilesMatch>
+
+RewriteEngine On
+RewriteRule ^principal/$ /principal [R=308,L]
+RewriteRule ^principal$ index.php?r=home [END,QSA]
+RewriteRule ^admin/$ admin [R=308,L]
+RewriteRule ^admin$ index.php?r=admin-entry [END,QSA]

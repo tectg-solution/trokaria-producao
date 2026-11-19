@@ -1,0 +1,4 @@
+<?php
+declare(strict_types=1);
+require __DIR__.'/app/bootstrap.php';
+try{$id=(int)($_GET['id']??0);$p=sql('SELECT p.filename,l.status,l.user_id,u.status AS owner_status FROM photos p JOIN listings l ON l.id=p.listing_id JOIN users u ON u.id=l.user_id WHERE p.id=?',[$id])->fetch();$u=currentUser();$public=$p&&$p['status']==='ACTIVE'&&$p['owner_status']==='ACTIVE';$private=$p&&$u&&((int)$p['user_id']===(int)$u['id']||$u['role']==='ADMIN');if(!$p||(!$public&&!$private)||!preg_match('/^[a-f0-9]{32}\.jpg$/',$p['filename'])){http_response_code(404);exit;}$path=__DIR__.'/app/storage/photos/'.$p['filename'];if(!is_file($path)){http_response_code(404);exit;}header('Content-Type: image/jpeg');header('Content-Length: '.filesize($path));header('Content-Disposition: inline');header('Cache-Control: private, no-store');session_write_close();readfile($path);}catch(Throwable $ex){http_response_code(404);}

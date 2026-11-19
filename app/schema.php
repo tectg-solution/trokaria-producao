@@ -1,0 +1,27 @@
+<?php
+declare(strict_types=1);
+function schema(PDO $db):void{
+ $id=$db->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY';
+ $ref=$db->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?'INTEGER':'BIGINT UNSIGNED';
+ $tables=[
+ "CREATE TABLE IF NOT EXISTS rate_locks(lock_key CHAR(64) PRIMARY KEY,created_at DATETIME NOT NULL)",
+
+ "CREATE TABLE IF NOT EXISTS users(id $id,name VARCHAR(100) NOT NULL,email VARCHAR(190) NOT NULL UNIQUE,password_hash VARCHAR(255) NOT NULL,city VARCHAR(120) NOT NULL,state CHAR(2) NOT NULL,role VARCHAR(10) NOT NULL DEFAULT 'USER',status VARCHAR(15) NOT NULL DEFAULT 'ACTIVE',auth_version INT NOT NULL DEFAULT 1,email_verified INT NOT NULL DEFAULT 0,created_at DATETIME NOT NULL)",
+ "CREATE TABLE IF NOT EXISTS verification_tokens(id $id,user_id $ref NOT NULL,token_hash CHAR(64) NOT NULL UNIQUE,expires_at DATETIME NOT NULL,used_at DATETIME,created_at DATETIME NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))",
+ "CREATE TABLE IF NOT EXISTS listings(id $id,user_id $ref NOT NULL,title VARCHAR(100) NOT NULL,description TEXT NOT NULL,category VARCHAR(30) NOT NULL,wanted VARCHAR(200) NOT NULL,condition_label VARCHAR(40) NOT NULL,city VARCHAR(120) NOT NULL,state CHAR(2) NOT NULL,open_offers INT NOT NULL DEFAULT 1,status VARCHAR(15) NOT NULL DEFAULT 'PENDING',revision INT NOT NULL DEFAULT 1,moderation_reason TEXT,moderation_source VARCHAR(30) NOT NULL DEFAULT 'HUMAN',semantic_json TEXT,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))",
+ "CREATE TABLE IF NOT EXISTS photos(id $id,listing_id $ref NOT NULL,filename VARCHAR(80) NOT NULL,position_num INT NOT NULL DEFAULT 0,FOREIGN KEY(listing_id) REFERENCES listings(id))",
+ "CREATE TABLE IF NOT EXISTS favorites(user_id $ref NOT NULL,listing_id $ref NOT NULL,PRIMARY KEY(user_id,listing_id),FOREIGN KEY(user_id) REFERENCES users(id),FOREIGN KEY(listing_id) REFERENCES listings(id))",
+ "CREATE TABLE IF NOT EXISTS proposals(id $id,listing_id $ref NOT NULL,sender_id $ref NOT NULL,recipient_id $ref NOT NULL,offered_listing_id $ref,offer_title VARCHAR(120) NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'OPEN',sender_confirmed INT NOT NULL DEFAULT 0,recipient_confirmed INT NOT NULL DEFAULT 0,sender_read_at DATETIME,recipient_read_at DATETIME,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,UNIQUE(listing_id,sender_id),FOREIGN KEY(listing_id) REFERENCES listings(id),FOREIGN KEY(sender_id) REFERENCES users(id),FOREIGN KEY(recipient_id) REFERENCES users(id))",
+ "CREATE TABLE IF NOT EXISTS messages(id $id,proposal_id $ref NOT NULL,sender_id $ref NOT NULL,body TEXT NOT NULL,status VARCHAR(15) NOT NULL DEFAULT 'PENDING',moderation_reason TEXT,created_at DATETIME NOT NULL,FOREIGN KEY(proposal_id) REFERENCES proposals(id),FOREIGN KEY(sender_id) REFERENCES users(id))",
+ "CREATE TABLE IF NOT EXISTS reports(id $id,user_id $ref NOT NULL,listing_id $ref,proposal_id $ref,message_id $ref,reason TEXT NOT NULL,status VARCHAR(15) NOT NULL DEFAULT 'OPEN',resolution TEXT,created_at DATETIME NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))",
+ "CREATE TABLE IF NOT EXISTS appeals(id $id,user_id $ref NOT NULL,listing_id $ref NOT NULL,reason TEXT NOT NULL,status VARCHAR(15) NOT NULL DEFAULT 'OPEN',resolution TEXT,created_at DATETIME NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id),FOREIGN KEY(listing_id) REFERENCES listings(id))",
+ "CREATE TABLE IF NOT EXISTS jobs(id $id,listing_id $ref NOT NULL,revision INT NOT NULL,status VARCHAR(15) NOT NULL DEFAULT 'QUEUED',attempts INT NOT NULL DEFAULT 0,started_at DATETIME,last_error VARCHAR(200),created_at DATETIME NOT NULL,UNIQUE(listing_id,revision),FOREIGN KEY(listing_id) REFERENCES listings(id))",
+ "CREATE TABLE IF NOT EXISTS match_notifications(listing_a $ref NOT NULL,listing_b $ref NOT NULL,user_a $ref NOT NULL,user_b $ref NOT NULL,seen_a INT NOT NULL DEFAULT 0,seen_b INT NOT NULL DEFAULT 0,created_at DATETIME NOT NULL,PRIMARY KEY(listing_a,listing_b),FOREIGN KEY(listing_a) REFERENCES listings(id),FOREIGN KEY(listing_b) REFERENCES listings(id))",
+ "CREATE TABLE IF NOT EXISTS recovery_tokens(id $id,user_id $ref NOT NULL,token_hash CHAR(64) NOT NULL UNIQUE,expires_at DATETIME NOT NULL,used_at DATETIME,created_at DATETIME NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))",
+ "CREATE TABLE IF NOT EXISTS limits_log(id $id,actor_hash CHAR(64) NOT NULL,action VARCHAR(30) NOT NULL,created_at DATETIME NOT NULL)",
+ "CREATE TABLE IF NOT EXISTS audit(id $id,admin_id $ref NOT NULL,action VARCHAR(50) NOT NULL,target_id $ref,details TEXT,created_at DATETIME NOT NULL)"
+ ];
+ foreach($tables as $sql)$db->exec($sql.($db->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':''));
+ $indexes=['listings_status_owner'=>'listings(status,user_id,id)','photos_listing'=>'photos(listing_id,position_num)','proposals_sender'=>'proposals(sender_id,updated_at)','proposals_recipient'=>'proposals(recipient_id,status,updated_at)','messages_thread'=>'messages(proposal_id,id)','jobs_queue'=>'jobs(status,id)','limits_actor'=>'limits_log(actor_hash,action,created_at)','reports_status'=>'reports(status,id)'];
+ foreach($indexes as $name=>$target){try{$db->exec('CREATE INDEX '.($db->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?'IF NOT EXISTS ':'').$name.' ON '.$target);}catch(PDOException $e){if((int)($e->errorInfo[1]??0)!==1061)throw $e;}}
+}
